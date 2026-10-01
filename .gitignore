@@ -1,0 +1,10 @@
+dados/prata/*
+dados/ouro/*
+
+!dados/**/.gitkeep
+
+.venv/
+__pycache__/
+
+.DS_Store
+.vscode/
