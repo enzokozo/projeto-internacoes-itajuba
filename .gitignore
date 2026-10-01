@@ -1,6 +1,8 @@
 dados/prata/*
 dados/ouro/*
+relatorios/
 
+!dados/prata/proveniencia.jsonl
 !dados/**/.gitkeep
 
 .venv/
