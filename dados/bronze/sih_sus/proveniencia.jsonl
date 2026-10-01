@@ -1,0 +1,1 @@
+{"fonte": "SIH/SUS (TabNet - DataSUS)", "url_origem": "http://tabnet.datasus.gov.br/cgi/deftohtm.exe?sih/cnv/nimg.def", "ficheiro_origem": "sih_sus_raw.csv", "ficheiro_bronze": "internacoes_20261001.csv", "extraido_em": "2026-10-01T14:56:52.320814", "descricao": "Internações por doenças respiratórias em Itajubá/MG"}

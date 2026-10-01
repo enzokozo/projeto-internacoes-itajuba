@@ -11,4 +11,4 @@ A amplitude térmica extrema (a diferença acentuada entre os dias mais quentes 
 | Fonte | Formato | Acesso | Chave de Ligação | Link |
 |---|---|---|---|---|
 | SIH/SUS (TabNet / DataSUS) | CSV | Baixado | Mês/Ano e Município | http://tabnet.datasus.gov.br/cgi/deftohtm.exe?sih/cnv/nimg.def |
-| BDMEP / INMET | CSV | Baixado / API | Mês/Ano e Município | https://portal.inmet.gov.br/dadoshistoricos |
+| NASA POWER | CSV | Baixado / API | Data (Dia/Mês/Ano) e Coordenadas | https://power.larc.nasa.gov/ |
