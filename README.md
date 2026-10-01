@@ -24,3 +24,15 @@ A amplitude térmica extrema (a diferença acentuada entre os dias mais quentes 
 - Cabeçalho descritivo da NASA nas primeiras linhas antes dos dados reais.
 - Data dividida em colunas separadas (`YEAR` para Ano e `DOY` para Dia do Ano, ou `YEAR`, `MO`, `DY`).
 - Valores ausentes codificados originalmente como `-999`.
+
+## Decisões de Tratamento e Atributos Derivados (Camada Prata)
+
+### SIH/SUS (Internações)
+- **Filtragem:** Removidas linhas de cabeçalho, notas de rodapé e totais gerados pelo TabNet.
+- **Tipagem:** Colunas de contagem de internações convertidas para o tipo numérico `int64`.
+- **Formato de Saída:** Dados salvos em formato Parquet (`dados/prata/sih_sus.parquet`).
+
+### NASA POWER (Meteorologia)
+- **Valores Ausentes:** O código `-999` da NASA foi substituído por `NaN`.
+- **Atributo Derivado (`AMPLITUDE_TERMICA`):** Calculado como a diferença diária entre temperatura máxima e mínima ($T2M\_MAX - T2M\_MIN$), essencial para responder à pergunta norteadora.
+- **Formato de Saída:** Dados salvos em formato Parquet (`dados/prata/nasa_power.parquet`).
