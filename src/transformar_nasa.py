@@ -1,6 +1,7 @@
 """Script de transformação da camada Bronze para Prata: NASA POWER.
 
 Lê o CSV do NASA POWER, converte códigos de ausente (-999) para nulo,
+converte a data (YEAR + DOY) para uma coluna de data real
 e calcula o Atributo Derivado 'AMPLITUDE_TERMICA' (T2M_MAX - T2M_MIN).
 """
 
@@ -34,20 +35,45 @@ def carregar_dados() -> tuple[pd.DataFrame, Path]:
     return df, caminho_csv
 
 
+def converter_data(df: pd.DataFrame) -> pd.Series:
+    """Monta a data a partir de YEAR e DOY (dia do ano) ou, se existirem, YEAR, MO e DY."""
+    if {"YEAR", "MO", "DY"}.issubset(df.columns):
+        datas = pd.to_datetime(
+            pd.DataFrame({"year": df["YEAR"], "month": df["MO"], "day": df["DY"]}),
+            errors="coerce",
+        )
+    elif {"YEAR", "DOY"}.issubset(df.columns):
+        inicio_do_ano = pd.to_datetime(df["YEAR"].astype(int).astype(str), format="%Y")
+        datas = inicio_do_ano + pd.to_timedelta(df["DOY"].astype(int) - 1, unit="D")
+    else:
+        raise ValueError("Colunas de data nao encontradas (esperado YEAR+DOY ou YEAR+MO+DY).")
+
+    if datas.isna().any():
+        raise ValueError(f"{int(datas.isna().sum())} linha(s) com data invalida.")
+
+    return datas
+
+
 def tratar_nasa(df: pd.DataFrame) -> pd.DataFrame:
-    """Aplica limpeza e calcula o atributo derivado."""
+    """Aplica limpeza, converte a data e calcula o atributo derivado."""
     df = limpeza.tirar_espacos(df)
+
+    # Padroniza nomes de colunas em maiúsculo
+    df.columns = [c.upper() for c in df.columns]
 
     # Substitui valor ausente padrao do NASA POWER (-999) por NaN
     df = df.replace(-999, np.nan)
     df = df.replace("-999", np.nan)
 
-    # Padroniza nomes de colunas em maiúsculo
-    df.columns = [c.upper() for c in df.columns]
+    # Data: YEAR + DOY (ou YEAR + MO + DY) -> coluna de data, primeira da tabela
+    df.insert(0, "DATA", converter_data(df))
+    print("[NASA POWER] Coluna 'DATA' criada.")
 
     # Atributo Derivado: Amplitude Térmica (T2M_MAX - T2M_MIN)
     if "T2M_MAX" in df.columns and "T2M_MIN" in df.columns:
         df["AMPLITUDE_TERMICA"] = df["T2M_MAX"] - df["T2M_MIN"]
+        if (df["AMPLITUDE_TERMICA"] < 0).any():
+            raise ValueError("Amplitude termica negativa encontrada (T2M_MAX < T2M_MIN).")
         print("[NASA POWER] Atributo derivado 'AMPLITUDE_TERMICA' calculado.")
 
     return df
@@ -72,7 +98,9 @@ def registrar_proveniencia(origem: Path, destino: Path, linhas_antes: int, linha
         "decisoes": [
             "Ignoradas linhas do cabecalho descritivo da NASA ate -END HEADER-",
             "Valores ausentes -999 convertidos para NaN",
+            "Data (YEAR + DOY) convertida para a coluna DATA",
             "Criado o atributo derivado AMPLITUDE_TERMICA (T2M_MAX - T2M_MIN)",
+            "Validado que a amplitude termica nao e negativa",
             "Exportação para formato Parquet",
         ],
         "transformado_em": datetime.now().isoformat(timespec="seconds"),
