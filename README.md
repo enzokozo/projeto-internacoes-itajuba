@@ -32,14 +32,17 @@ projeto-internacoes-itajuba/
 │   └── prata/
 │       ├── sih_sus.parquet      # internações mensais tratadas
 │       ├── nasa_power.parquet   # clima diário tratado
+│       ├── clima_internacoes.parquet  # clima diário + internações do mês (enriquecimento)
 │       └── proveniencia.jsonl   # decisões de cada transformação
 ├── src/
 │   ├── ingerir_sih.py           # ingestão do SIH/SUS (origem → Bronze)
 │   ├── ingerir_nasa.py          # ingestão do NASA POWER (origem → Bronze)
 │   ├── explorar.py              # relatórios de qualidade (HTML) da Bronze, salvos em relatorios/
-│   ├── limpeza.py               # funções genéricas de limpeza
+│   ├── limpeza.py               # funções genéricas de limpeza (uma tabela por vez)
+│   ├── juncao.py                # funções genéricas de junção (relação entre duas tabelas)
 │   ├── transformar_sih.py       # SIH/SUS: Bronze → Prata
-│   └── transformar_nasa.py      # NASA POWER: Bronze → Prata
+│   ├── transformar_nasa.py      # NASA POWER: Bronze → Prata
+│   └── enriquecer.py            # junção NASA + SIH/SUS na Prata
 ├── requirements.txt
 └── README.md
 ```
@@ -55,6 +58,7 @@ python src/ingerir_nasa.py
 python src/explorar.py          # opcional: gera os relatórios de qualidade
 python src/transformar_sih.py
 python src/transformar_nasa.py
+python src/enriquecer.py
 ```
 
 Antes da ingestão, coloque `sih_sus_raw.csv` e `nasa_raw.csv` na pasta `dados/`.
@@ -89,6 +93,28 @@ Antes da ingestão, coloque `sih_sus_raw.csv` e `nasa_raw.csv` na pasta `dados/`
 - **Atributo Derivado (`AMPLITUDE_TERMICA`):** Calculado como a diferença diária entre temperatura máxima e mínima ($T2M\_MAX - T2M\_MIN$), essencial para responder à pergunta norteadora. O script confere que ela nunca é negativa. Nos dados atuais varia de 3,4 °C a 22,9 °C, com média de 12,3 °C.
 - **Formato de Saída:** Dados salvos em formato Parquet (`dados/prata/nasa_power.parquet`).
 
+## Junção (Enriquecimento na Camada Prata)
+Clima diário juntado às internações mensais por `MES = PERIODO`, com `how="left"` e `validate="many_to_one"`. O script `src/enriquecer.py` usa as funções de `src/juncao.py` (`conferir_chaves`, `juntar` e `validar`) e salva o resultado em `dados/prata/clima_internacoes.parquet`.
+
+- **Chave:** `MES` foi criada na NASA a partir de `DATA` (primeiro dia do mês), no mesmo formato de `PERIODO` do SIH/SUS. Os nomes são diferentes, mas o conteúdo é o mesmo.
+- **Grão:** NASA = 1 linha por dia; SIH/SUS = 1 linha por mês; resultado = 1 linha por dia. As colunas de internações se repetem em cada dia do mês. **Não somar essas colunas diretamente no resultado:** a soma de `Total` daria 414.277 em vez de 13.599. O resumo por mês fica para a camada Ouro (etapa de modelagem).
+
+### Conferência das chaves (antes da junção, em meses)
+- Só na NASA: 0
+- Só no SIH/SUS: 2 (2009-11 e 2009-12)
+- Nos dois: 120
+
+### Contagem
+- Linhas na NASA (esquerda): 3.652
+- Linhas no resultado: 3.652
+- Dias sem par no SIH/SUS: 0
+
+### Quem não casou
+- **2 meses do SIH/SUS (nov/2009 e dez/2009, com 5 e 40 internações, total de 45)** não têm clima correspondente, porque a série da NASA começa em 01/01/2010. Esses meses vieram na extração do TabNet mesmo com o filtro de 2010 a 2019. É um caso de universos diferentes: não há o que consertar. Como o SIH/SUS está à direita na junção `left`, esses meses ficam fora do resultado. Eles estão registrados aqui e no `proveniencia.jsonl` para não sumirem sem aviso.
+
+### Atributo que só existe depois da junção (pendente)
+Nenhum atributo foi criado nesta etapa. No grão diário, qualquer conta que misture o clima do dia com as internações do mês inventaria um valor por dia. Por exemplo, dividir o total do mês pelos dias supõe que as internações se distribuem igualmente, o que tornaria igual a internação de um dia de amplitude de 7 °C e de um dia de 20 °C. Como a pergunta norteadora é mensal, atributos que combinem as duas fontes serão criados na Ouro, depois do resumo por mês.
+
 ## Rastreabilidade
 Cada etapa registra o que fez em arquivos `proveniencia.jsonl` (modo de acréscimo, que preserva o histórico):
 - **Bronze:** fonte, URL, arquivo de origem e data de extração.
@@ -97,6 +123,6 @@ Cada etapa registra o que fez em arquivos `proveniencia.jsonl` (modo de acrésci
 ## Próximos Passos (Camada Ouro)
 A camada Ouro ainda não foi implementada. Está prevista:
 - Agregar o clima diário por mês (por exemplo, média da temperatura e amplitude média e máxima do mês).
-- Cruzar com as internações por `Mês/Ano` (120 meses, de 2010 a 2019).
+- Partir da tabela enriquecida `clima_internacoes.parquet` (120 meses, de 2010 a 2019), já com clima e internações lado a lado.
 - Decidir se a análise usa o total de internações ou as faixas etárias.
 - Comparar o efeito da amplitude térmica com o da temperatura média sobre as internações.
