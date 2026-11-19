@@ -29,39 +29,41 @@ projeto-internacoes-itajuba/
 │   ├── bronze/
 │   │   ├── sih_sus/             # cópia fiel do original, com data no nome + proveniencia.jsonl
 │   │   └── nasa_power/          # cópia fiel do original, com data no nome + proveniencia.jsonl
-│   └── prata/
-│       ├── sih_sus.parquet      # internações mensais tratadas
-│       ├── nasa_power.parquet   # clima diário tratado
-│       ├── clima_internacoes.parquet  # clima diário + internações do mês (enriquecimento)
-│       └── proveniencia.jsonl   # decisões de cada transformação
+│   ├── prata/
+│   │   ├── sih_sus.parquet      # internações mensais tratadas
+│   │   ├── nasa_power.parquet   # clima diário tratado
+│   │   ├── clima_internacoes.parquet  # clima diário + internações do mês (enriquecimento)
+│   │   └── proveniencia.jsonl   # decisões de cada transformação
+│   └── ouro/                    # camada Ouro (ainda não implementada)
+├── relatorios/                  # relatórios de qualidade (HTML) gerados pelo explorar.py
 ├── src/
+│   ├── pipeline.py              # ponto de entrada: roda as etapas em ordem e permite retomar do meio
+│   ├── config.py                # caminhos, parâmetros das fontes e configuração do log
 │   ├── ingerir_sih.py           # ingestão do SIH/SUS (origem → Bronze)
 │   ├── ingerir_nasa.py          # ingestão do NASA POWER (origem → Bronze)
-│   ├── explorar.py              # relatórios de qualidade (HTML) da Bronze, salvos em relatorios/
-│   ├── limpeza.py               # funções genéricas de limpeza (uma tabela por vez)
-│   ├── juncao.py                # funções genéricas de junção (relação entre duas tabelas)
 │   ├── transformar_sih.py       # SIH/SUS: Bronze → Prata
 │   ├── transformar_nasa.py      # NASA POWER: Bronze → Prata
-│   └── enriquecer.py            # junção NASA + SIH/SUS na Prata
+│   ├── enriquecer.py            # junção NASA + SIH/SUS na Prata
+│   ├── limpeza.py               # funções genéricas de limpeza (uma tabela por vez)
+│   ├── juncao.py                # funções genéricas de junção (relação entre duas tabelas)
+│   └── explorar.py              # opcional, fora do pipeline: relatórios de qualidade da Bronze
+├── pipeline.log                 # registro das execuções (gerado, fora do Git)
 ├── requirements.txt
 └── README.md
 ```
 
 ## Como Executar
-Execute a partir da raiz do repositório:
+Antes, coloque `sih_sus_raw.csv` e `nasa_raw.csv` na pasta `dados/`. Depois, a partir da raiz do repositório:
 
 ```
 pip install -r requirements.txt
 
-python src/ingerir_sih.py
-python src/ingerir_nasa.py
-python src/explorar.py          # opcional: gera os relatórios de qualidade
-python src/transformar_sih.py
-python src/transformar_nasa.py
-python src/enriquecer.py
+python src/pipeline.py                  # roda todas as etapas
+python src/pipeline.py enriquecimento   # retoma a partir de uma etapa
+python src/explorar.py                  # opcional: relatórios de qualidade da Bronze
 ```
 
-Antes da ingestão, coloque `sih_sus_raw.csv` e `nasa_raw.csv` na pasta `dados/`.
+Etapas, em ordem: `ingestao`, `transformacao`, `enriquecimento`, `carga` e `modelagem` (as duas últimas ainda não implementadas). O andamento aparece na tela e fica registrado em `pipeline.log`.
 
 ## Defeitos Conhecidos das Fontes (Diagnóstico Bronze)
 
