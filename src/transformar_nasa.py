@@ -7,20 +7,23 @@ e calcula o Atributo Derivado 'AMPLITUDE_TERMICA' (T2M_MAX - T2M_MIN).
 
 from datetime import datetime
 import json
+import logging
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import config
 import limpeza
 
-BRONZE_NASA = Path("dados/bronze/nasa_power")
-PRATA_DIR = Path("dados/prata")
+from config import BRONZE_NASA, PRATA as PRATA_DIR, PRATA_NASA
+
+log = logging.getLogger(__name__)
 
 
 def carregar_dados() -> tuple[pd.DataFrame, Path]:
     """Carrega o CSV mais recente do NASA POWER na Bronze."""
     caminho_csv = limpeza.obter_arquivo_mais_recente(BRONZE_NASA, "temperaturas_nasa_*.csv")
-    print(f"[NASA POWER] Lendo arquivo Bronze: {caminho_csv.name}")
+    log.info("lendo arquivo bronze: %s", caminho_csv.name)
 
     # Descarta o cabecalho descritivo da NASA até o marcador de encerramento.
     with caminho_csv.open(encoding="utf-8-sig") as arquivo:
@@ -67,14 +70,18 @@ def tratar_nasa(df: pd.DataFrame) -> pd.DataFrame:
 
     # Data: YEAR + DOY (ou YEAR + MO + DY) -> coluna de data, primeira da tabela
     df.insert(0, "DATA", converter_data(df))
-    print("[NASA POWER] Coluna 'DATA' criada.")
+    log.debug("coluna DATA criada")
 
     # Atributo Derivado: Amplitude Térmica (T2M_MAX - T2M_MIN)
     if "T2M_MAX" in df.columns and "T2M_MIN" in df.columns:
         df["AMPLITUDE_TERMICA"] = df["T2M_MAX"] - df["T2M_MIN"]
         if (df["AMPLITUDE_TERMICA"] < 0).any():
             raise ValueError("Amplitude termica negativa encontrada (T2M_MAX < T2M_MIN).")
-        print("[NASA POWER] Atributo derivado 'AMPLITUDE_TERMICA' calculado.")
+        log.debug("atributo derivado AMPLITUDE_TERMICA calculado")
+    else:
+        # Sem T2M_MAX/T2M_MIN a Prata sai sem a amplitude, que e a variavel
+        # central da pergunta. Nao derruba o pipeline, mas precisa aparecer.
+        log.warning("T2M_MAX ou T2M_MIN ausente: AMPLITUDE_TERMICA nao foi calculada")
 
     return df
 
@@ -82,9 +89,9 @@ def tratar_nasa(df: pd.DataFrame) -> pd.DataFrame:
 def salvar_prata(df: pd.DataFrame) -> Path:
     """Salva a tabela tratada em formato Parquet."""
     PRATA_DIR.mkdir(parents=True, exist_ok=True)
-    destino = PRATA_DIR / "nasa_power.parquet"
+    destino = PRATA_NASA
     df.to_parquet(destino, index=False)
-    print(f"[NASA POWER] Dados salvos em Parquet: {destino} ({len(df)} linhas)")
+    log.info("prata salva: %s (%d linhas)", destino.name, len(df))
     return destino
 
 
@@ -110,7 +117,7 @@ def registrar_proveniencia(origem: Path, destino: Path, linhas_antes: int, linha
     with caminho_prov.open("a", encoding="utf-8") as f:
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
 
-    print(f"[NASA POWER] Proveniência registrada em: {caminho_prov}")
+    log.debug("proveniencia registrada em: %s", caminho_prov)
 
 
 def main() -> None:
@@ -125,4 +132,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()

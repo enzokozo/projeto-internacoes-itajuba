@@ -6,13 +6,14 @@ copia-o para a camada Bronze com a data no nome e regista a proveniencia.
 
 from datetime import date, datetime
 import json
+import logging
 from pathlib import Path
 import shutil
 
-# Definição dos caminhos de origem e destino
-CAMINHO_ORIGEM = Path("dados/nasa_raw.csv")  # Caminho do CSV descarregado
-BRONZE_NASA = Path("dados/bronze/nasa_power")
-FONTE_URL = "https://power.larc.nasa.gov/"
+import config
+from config import ORIGEM_NASA as CAMINHO_ORIGEM, BRONZE_NASA, URL_NASA as FONTE_URL
+
+log = logging.getLogger(__name__)
 
 
 def copiar_para_bronze(origem: Path) -> Path:
@@ -30,9 +31,13 @@ def copiar_para_bronze(origem: Path) -> Path:
     hoje = date.today().strftime("%Y%m%d")
     destino = BRONZE_NASA / f"temperaturas_nasa_{hoje}.csv"
 
+    # Rodar duas vezes no mesmo dia sobrescreve a copia de hoje.
+    if destino.exists():
+        log.warning("%s ja existia e foi sobrescrito", destino.name)
+
     # Copia mantendo o conteúdo intacto
     shutil.copy(origem, destino)
-    print(f"[NASA POWER] Ficheiro copiado para: {destino}")
+    log.info("copiado para a bronze: %s", destino.name)
     return destino
 
 
@@ -53,7 +58,7 @@ def registrar_proveniencia(origem: Path, destino: Path) -> None:
     with caminho_prov.open("a", encoding="utf-8") as f:
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
 
-    print(f"[NASA POWER] Proveniencia registrada em: {caminho_prov}")
+    log.debug("proveniencia registrada em: %s", caminho_prov)
 
 
 def main() -> None:
@@ -63,4 +68,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()

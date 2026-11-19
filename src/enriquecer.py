@@ -22,18 +22,17 @@ Como executar, a partir da raiz do projeto:
 """
 
 import json
+import logging
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 
+import config
 import juncao
 
-PRATA = Path("dados/prata")
+from config import PRATA, PRATA_NASA as CLIMA, PRATA_SIH as INTERNACOES, PRATA_CLIMA_INTERNACOES as DESTINO
 
-CLIMA = PRATA / "nasa_power.parquet"
-INTERNACOES = PRATA / "sih_sus.parquet"
-DESTINO = PRATA / "clima_internacoes.parquet"
+log = logging.getLogger(__name__)
 
 CHAVE_CLIMA = "MES"
 CHAVE_INTERNACOES = "PERIODO"
@@ -42,9 +41,8 @@ CHAVE_INTERNACOES = "PERIODO"
 def carregar():
     clima = pd.read_parquet(CLIMA)
     internacoes = pd.read_parquet(INTERNACOES)
-    print("clima      :", clima.shape)
-    print("internacoes:", internacoes.shape)
-    print()
+    log.debug("clima: %d linhas x %d colunas", *clima.shape)
+    log.debug("internacoes: %d linhas x %d colunas", *internacoes.shape)
     return clima, internacoes
 
 
@@ -76,7 +74,7 @@ def registrar(resultado, sem_par, antes, so_internacoes):
     caminho = PRATA / "proveniencia.jsonl"
     with caminho.open("a", encoding="utf-8") as f:
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
-    print("proveniencia:", caminho)
+    log.debug("proveniencia registrada em: %s", caminho)
     return info
 
 
@@ -89,7 +87,6 @@ def main():
     _, so_internacoes, _ = juncao.conferir_chaves(
         clima, internacoes, CHAVE_CLIMA, CHAVE_INTERNACOES
     )
-    print()
 
     # 2. Juntar mantendo tudo do clima.
     #    Muitos dias para um mes: many_to_one.
@@ -100,15 +97,19 @@ def main():
 
     # 3. Validar. A funcao devolve justamente o que nao casou.
     sem_par = juncao.validar(clima, resultado, CHAVE_INTERNACOES)
-    print()
+    if len(sem_par):
+        log.warning("%d dias do clima sem internacoes do mes", len(sem_par))
 
     # 4. Quem nao casou do outro lado.
     #    Com left, os meses que so existem nas internacoes nao entram
     #    no resultado, entao validar() nao os ve. Eles vieram do passo 1.
+    #    Hoje sao 2009-11 e 2009-12: esperado, mas registrado.
     if so_internacoes:
-        print("meses do SIH/SUS sem clima (fora do resultado):")
-        print([m.strftime("%Y-%m") for m in sorted(so_internacoes)])
-        print()
+        log.warning(
+            "%d meses do SIH/SUS sem clima (fora do resultado): %s",
+            len(so_internacoes),
+            ", ".join(m.strftime("%Y-%m") for m in sorted(so_internacoes)),
+        )
 
     # PERIODO e igual a MES depois da juncao; fica so uma das duas.
     resultado = resultado.drop(columns=CHAVE_INTERNACOES)
@@ -118,10 +119,11 @@ def main():
     #    as internacoes do mes inventaria um valor por dia. Ver README.
 
     resultado.to_parquet(DESTINO, index=False)
-    print("salvo em:", DESTINO, resultado.shape)
+    log.info("prata salva: %s (%d linhas)", DESTINO.name, len(resultado))
 
     registrar(resultado, sem_par, antes, so_internacoes)
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()

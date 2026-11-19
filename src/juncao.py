@@ -13,15 +13,25 @@ assuntos diferentes, entao sao modulos diferentes.
 Modulo nao e deposito de tudo que e generico. E um conjunto de
 funcoes que falam do mesmo assunto.
 
+LOG
+===
+Este modulo so cria o seu logger; quem liga o log (configurar_log)
+e o pipeline.py ou o script que chamou. Por isso nao importa config:
+fica na base da hierarquia, sem saber quem esta em cima.
+
 Coloque este arquivo em src e importe com:
     import juncao
 """
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def conferir_chaves(esquerda, direita, col_esq, col_dir):
     """Compara as chaves ANTES de juntar.
 
-    Devolve os tres conjuntos e imprime o tamanho de cada um.
+    Devolve os tres conjuntos e registra o tamanho de cada um.
     Esses numeros sao a previsao do que a juncao vai fazer:
     anote-os e compare depois.
 
@@ -36,14 +46,15 @@ def conferir_chaves(esquerda, direita, col_esq, col_dir):
     so_direita = dir_ - esq
     nos_dois = esq & dir_
 
-    print(f"chaves so em {col_esq}:", len(so_esquerda))
-    print(f"chaves so em {col_dir}:", len(so_direita))
-    print("chaves nos dois       :", len(nos_dois))
+    log.info(
+        "chaves: so em %s=%d, so em %s=%d, nos dois=%d",
+        col_esq, len(so_esquerda), col_dir, len(so_direita), len(nos_dois),
+    )
 
     if so_esquerda:
-        print("  exemplos so na esquerda:", sorted(so_esquerda)[:5])
+        log.info("exemplos so na esquerda: %s", [str(c) for c in sorted(so_esquerda)[:5]])
     if so_direita:
-        print("  exemplos so na direita :", sorted(so_direita)[:5])
+        log.info("exemplos so na direita: %s", [str(c) for c in sorted(so_direita)[:5]])
 
     return so_esquerda, so_direita, nos_dois
 
@@ -86,13 +97,14 @@ def validar(esquerda, resultado, coluna_da_direita):
     """
     sem_par = resultado[coluna_da_direita].isna()
 
-    print("linhas na esquerda :", len(esquerda))
-    print("linhas no resultado:", len(resultado))
-    print("sem par            :", int(sem_par.sum()))
+    log.info(
+        "linhas: esquerda=%d, resultado=%d, sem par=%d",
+        len(esquerda), len(resultado), int(sem_par.sum()),
+    )
 
     if len(resultado) < len(esquerda):
-        print("ATENCAO: o resultado perdeu linhas. Juncao do tipo errado?")
+        log.warning("o resultado perdeu linhas. Juncao do tipo errado?")
     elif len(resultado) > len(esquerda):
-        print("ATENCAO: o resultado ganhou linhas. A chave repete na direita.")
+        log.warning("o resultado ganhou linhas. A chave repete na direita.")
 
     return resultado[sem_par]

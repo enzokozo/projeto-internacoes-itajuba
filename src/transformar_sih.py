@@ -7,13 +7,16 @@ para data, converte as contagens de internação para inteiro e grava em Parquet
 
 from datetime import datetime
 import json
+import logging
 from pathlib import Path
 import pandas as pd
 
+import config
 import limpeza
 
-BRONZE_SIH = Path("dados/bronze/sih_sus")
-PRATA_DIR = Path("dados/prata")
+from config import BRONZE_SIH, PRATA as PRATA_DIR, PRATA_SIH
+
+log = logging.getLogger(__name__)
 
 # O TabNet escreve os meses por extenso; as chaves já estão sem acento e em minúsculo
 MESES = {
@@ -26,7 +29,7 @@ MESES = {
 def carregar_dados() -> tuple[pd.DataFrame, Path]:
     """Carrega o CSV mais recente do SIH/SUS na Bronze (separador ';')."""
     caminho_csv = limpeza.obter_arquivo_mais_recente(BRONZE_SIH, "internacoes_*.csv")
-    print(f"[SIH/SUS] Lendo arquivo Bronze: {caminho_csv.name}")
+    log.info("lendo arquivo bronze: %s", caminho_csv.name)
 
     try:
         df = pd.read_csv(caminho_csv, sep=";", encoding="utf-8", dtype=str)
@@ -93,9 +96,9 @@ def tratar_sih(df: pd.DataFrame) -> pd.DataFrame:
 def salvar_prata(df: pd.DataFrame) -> Path:
     """Salva os dados no formato Parquet na Prata."""
     PRATA_DIR.mkdir(parents=True, exist_ok=True)
-    destino = PRATA_DIR / "sih_sus.parquet"
+    destino = PRATA_SIH
     df.to_parquet(destino, index=False)
-    print(f"[SIH/SUS] Dados salvos em Parquet: {destino} ({len(df)} linhas)")
+    log.info("prata salva: %s (%d linhas)", destino.name, len(df))
     return destino
 
 
@@ -122,7 +125,7 @@ def registrar_proveniencia(origem: Path, destino: Path, linhas_antes: int, linha
     with caminho_prov.open("a", encoding="utf-8") as f:
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
 
-    print(f"[SIH/SUS] Proveniência registrada em: {caminho_prov}")
+    log.debug("proveniencia registrada em: %s", caminho_prov)
 
 
 def main() -> None:
@@ -137,4 +140,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()

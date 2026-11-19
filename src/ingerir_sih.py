@@ -6,13 +6,14 @@ com a data de extração no nome e regista a proveniencia.
 
 from datetime import date, datetime
 import json
+import logging
 from pathlib import Path
 import shutil
 
-# Definição dos caminhos de origem e destino
-CAMINHO_ORIGEM = Path("dados/sih_sus_raw.csv")  # Caminho do CSV descarregado
-BRONZE_SIH = Path("dados/bronze/sih_sus")
-FONTE_URL = "http://tabnet.datasus.gov.br/cgi/deftohtm.exe?sih/cnv/nimg.def"
+import config
+from config import ORIGEM_SIH as CAMINHO_ORIGEM, BRONZE_SIH, URL_SIH as FONTE_URL
+
+log = logging.getLogger(__name__)
 
 
 def copiar_para_bronze(origem: Path) -> Path:
@@ -30,9 +31,13 @@ def copiar_para_bronze(origem: Path) -> Path:
     hoje = date.today().strftime("%Y%m%d")
     destino = BRONZE_SIH / f"internacoes_{hoje}.csv"
 
+    # Rodar duas vezes no mesmo dia sobrescreve a copia de hoje.
+    if destino.exists():
+        log.warning("%s ja existia e foi sobrescrito", destino.name)
+
     # Copia o ficheiro sem alterar o seu conteúdo
     shutil.copy(origem, destino)
-    print(f"[SIH/SUS] Ficheiro copiado para: {destino}")
+    log.info("copiado para a bronze: %s", destino.name)
     return destino
 
 
@@ -53,7 +58,7 @@ def registrar_proveniencia(origem: Path, destino: Path) -> None:
     with caminho_prov.open("a", encoding="utf-8") as f:
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
 
-    print(f"[SIH/SUS] Proveniencia registrada em: {caminho_prov}")
+    log.debug("proveniencia registrada em: %s", caminho_prov)
 
 
 def main() -> None:
@@ -63,4 +68,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    config.configurar_log()
     main()
