@@ -20,6 +20,7 @@ COMO EXECUTAR, a partir da raiz do projeto
 ==========================================
     python src/pipeline.py                  roda tudo
     python src/pipeline.py enriquecimento   retoma do meio
+    python src/pipeline.py modelagem        so refaz a Ouro (dbt) e confere
 
 Antes, coloque sih_sus_raw.csv e nasa_raw.csv na pasta dados/.
 
@@ -67,12 +68,38 @@ def etapa_carga():
     carga.main()
 
 
+def etapa_modelagem():
+    # Aula 10: a Ouro e construida pelo dbt, a partir dos SELECT em
+    # ecox14/models/. O dbt descobre sozinho a ordem pelos ref().
+    import shutil
+    import subprocess
+
+    import carga
+
+    if shutil.which("dbt") is None:
+        raise RuntimeError(
+            "comando dbt nao encontrado. Ative o ambiente virtual e rode: "
+            "pip install dbt-core dbt-duckdb"
+        )
+
+    # check=True: se o dbt falhar, o Python levanta erro e o pipeline
+    # para. Sem ele, o log diria "concluido" com a Ouro quebrada.
+    subprocess.run(
+        ["dbt", "run"],
+        cwd=config.RAIZ / "ecox14",
+        check=True,
+    )
+
+    # Confere a Ouro que o dbt ACABOU de criar.
+    carga.conferir_ouro()
+
+
 ETAPAS = [
     ("ingestao", etapa_ingestao),
     ("transformacao", etapa_transformacao),
     ("enriquecimento", etapa_enriquecimento),
     ("carga", etapa_carga),
-    ("modelagem", None),   # aula 10   
+    ("modelagem", etapa_modelagem),   # aula 10: era None
 ]
 
 log = logging.getLogger(__name__)

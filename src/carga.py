@@ -1,12 +1,16 @@
 """
-Carga: Prata (Parquet) -> banco DuckDB, e construcao da camada Ouro.
+Carga: Prata (Parquet) -> banco DuckDB, e conferencia da camada Ouro.
 
 O QUE ESTE SCRIPT FAZ
 =====================
 1. Abre (ou cria) o banco dados/ouro/projeto.duckdb.
 2. Copia as tabelas da Prata para o esquema prata, como estao.
-3. Constroi o esquema estrela no esquema ouro, em SQL.
-4. Confere o modelo e PARA o pipeline se algo nao bater.
+3. (aula 10) A Ouro NAO e mais construida aqui: quem cria as tabelas
+   e o dbt, na etapa modelagem (pasta ecox14/). As funcoes antigas
+   construir_* ficam no arquivo, comentadas no main, para comparar.
+4. conferir_ouro() confere o modelo e PARA o pipeline se algo nao
+   bater. Ela e chamada pelo pipeline DEPOIS do dbt run, para conferir
+   a Ouro que acabou de ser criada, e nao a da execucao anterior.
 
 O MODELO (esquema estrela)
 ==========================
@@ -30,9 +34,8 @@ O QUE PODE SER SOMADO
                                    (a excecao e precipitacao_mm, que e soma do mes)
 
 Como executar, a partir da raiz do projeto:
-    python src/carga.py
-ou, pelo pipeline:
-    python src/pipeline.py carga
+    python src/pipeline.py carga      carga + dbt + conferencia
+    python src/carga.py               so a carga da Prata (sem Ouro)
 """
 
 import logging
@@ -282,7 +285,40 @@ CONFERENCIAS = {
 }
 
 
+def avisar_meses_fora(con):
+    # Antes isto ficava dentro de construir_fatos. Agora que o dbt cria a
+    # fato, o aviso vem para a conferencia: os meses do SIH/SUS sem clima
+    # (nov e dez/2009) continuam nao sumindo em silencio.
+    meses_fora, internacoes_fora = con.execute("""
+        SELECT COUNT(*), COALESCE(SUM(Total), 0)
+        FROM prata.sih_sus
+        WHERE CAST(PERIODO AS DATE) NOT IN (SELECT mes FROM ouro.dim_mes)
+    """).fetchone()
+    if meses_fora:
+        log.warning("%s meses do SIH/SUS ficaram fora da fato (%s internacoes): "
+                    "sem clima correspondente", meses_fora, internacoes_fora)
+
+
+TABELAS_OURO = [
+    "dim_mes",
+    "dim_faixa_etaria",
+    "fato_internacoes",
+    "fato_clima_mensal",
+    "vw_clima_internacoes_mensal",
+]
+
+
+def contar_ouro(con):
+    # Antes cada construir_* registrava as proprias linhas. Agora quem
+    # cria as tabelas e o dbt, que nao mostra contagem; o log vem daqui.
+    for tabela in TABELAS_OURO:
+        log.info("ouro.%s: %s linhas", tabela, contar(con, f"ouro.{tabela}"))
+
+
 def conferir(con):
+    contar_ouro(con)
+    avisar_meses_fora(con)
+
     problemas = []
     for nome, sql in CONFERENCIAS.items():
         valor = um_valor(con, sql)
@@ -297,16 +333,35 @@ def conferir(con):
         raise ValueError("modelo inconsistente: " + "; ".join(problemas))
 
 
+def conferir_ouro():
+    """Abre o banco, confere a Ouro e fecha.
+
+    Fica separada do main() porque precisa rodar DEPOIS do dbt run:
+    antes dele, a Ouro ou nao existe (banco novo) ou e a da execucao
+    anterior. Abre a propria conexao porque o dbt ja terminou e soltou
+    o arquivo; duas conexoes ao mesmo tempo dariam "file is locked".
+    """
+    con = conectar()
+    try:
+        conferir(con)
+    finally:
+        con.close()
+
+
 def main():
     con = conectar()
     try:
         criar_esquemas(con)
         carregar_prata(con)
-        construir_dimensoes(con)
-        construir_fatos(con)
-        construir_view(con)
-        conferir(con)
+        # Aula 10: agora e o dbt (pasta ecox14/, etapa modelagem).
+        # Comentado, nao apagado, para comparar as duas formas.
+        # construir_dimensoes(con)
+        # construir_fatos(con)
+        # construir_view(con)
+        # conferir(con)   -> foi para conferir_ouro(), depois do dbt
     finally:
+        # Fechar aqui e obrigatorio: o dbt abre o mesmo arquivo em
+        # seguida, e o DuckDB nao deixa dois programas escreverem nele.
         con.close()
     log.info("carga concluida")
 

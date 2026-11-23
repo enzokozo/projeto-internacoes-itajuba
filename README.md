@@ -36,6 +36,16 @@ projeto-internacoes-itajuba/
 │   │   └── proveniencia.jsonl   # decisões de cada transformação
 │   └── ouro/
 │       └── projeto.duckdb       # banco DuckDB: esquemas prata e ouro (gerado, fora do Git)
+├── ecox14/                      # projeto dbt: constrói a camada Ouro (etapa modelagem)
+│   ├── dbt_project.yml          # nome do projeto, pastas e materialização padrão (tabela)
+│   ├── profiles.yml             # conexão com dados/ouro/projeto.duckdb (caminho relativo)
+│   └── models/
+│       ├── sources.yml          # tabelas da Prata que o dbt lê, mas não cria
+│       ├── dim_mes.sql
+│       ├── dim_faixa_etaria.sql
+│       ├── fato_internacoes.sql
+│       ├── fato_clima_mensal.sql
+│       └── vw_clima_internacoes_mensal.sql
 ├── relatorios/                  # relatórios de qualidade (HTML) gerados pelo explorar.py
 ├── src/
 │   ├── pipeline.py              # ponto de entrada: roda as etapas em ordem e permite retomar do meio
@@ -45,7 +55,7 @@ projeto-internacoes-itajuba/
 │   ├── transformar_sih.py       # SIH/SUS: Bronze → Prata
 │   ├── transformar_nasa.py      # NASA POWER: Bronze → Prata
 │   ├── enriquecer.py            # junção NASA + SIH/SUS na Prata
-│   ├── carga.py                 # Prata → DuckDB e construção da camada Ouro (esquema estrela)
+│   ├── carga.py                 # Prata → DuckDB e conferências da camada Ouro
 │   ├── limpeza.py               # funções genéricas de limpeza (uma tabela por vez)
 │   ├── juncao.py                # funções genéricas de junção (relação entre duas tabelas)
 │   └── explorar.py              # opcional, fora do pipeline: relatórios de qualidade da Bronze
@@ -62,13 +72,23 @@ pip install -r requirements.txt
 
 python src/pipeline.py                  # roda todas as etapas
 python src/pipeline.py enriquecimento   # retoma a partir de uma etapa
-python src/pipeline.py carga            # só refaz o banco e a camada Ouro
+python src/pipeline.py carga            # refaz o banco, a camada Ouro (dbt) e as conferências
+python src/pipeline.py modelagem        # só refaz a camada Ouro (dbt) e as conferências
 python src/explorar.py                  # opcional: relatórios de qualidade da Bronze
 ```
 
-Etapas, em ordem: `ingestao`, `transformacao`, `enriquecimento`, `carga` e `modelagem` (a última ainda não implementada). O andamento aparece na tela e fica registrado em `pipeline.log`.
+Etapas, em ordem: `ingestao`, `transformacao`, `enriquecimento`, `carga` e `modelagem`. A etapa `modelagem` chama o `dbt run` dentro de `ecox14/` e, em seguida, as conferências do `carga.py`. O andamento aparece na tela e fica registrado em `pipeline.log`.
 
-O banco `dados/ouro/projeto.duckdb` é gerado inteiro pela etapa `carga` e não vai para o Git. Apagá-lo e rodar `python src/pipeline.py carga` recria tudo do zero.
+O banco `dados/ouro/projeto.duckdb` é gerado pelas etapas `carga` (esquema `prata`) e `modelagem` (esquema `ouro`) e não vai para o Git. Apagá-lo e rodar `python src/pipeline.py carga` recria tudo do zero.
+
+Para usar o dbt sozinho, rode de dentro da pasta `ecox14/` (é lá que está o `profiles.yml`):
+
+```
+cd ecox14
+dbt debug                          # confere a conexão com o banco
+dbt run                            # cria as 5 tabelas/views da Ouro
+dbt run --select dim_mes+          # só a dim_mes e o que depende dela
+```
 
 ## Defeitos Conhecidos das Fontes (Diagnóstico Bronze)
 
@@ -123,7 +143,24 @@ Clima diário juntado às internações mensais por `MES = PERIODO`, com `how="l
 Nenhum atributo foi criado nesta etapa. No grão diário, qualquer conta que misture o clima do dia com as internações do mês inventaria um valor por dia. Por exemplo, dividir o total do mês pelos dias supõe que as internações se distribuem igualmente, o que tornaria igual a internação de um dia de amplitude de 7 °C e de um dia de 20 °C. Como a pergunta norteadora é mensal, atributos que combinem as duas fontes serão criados na Ouro, a partir da view mensal `ouro.vw_clima_internacoes_mensal`.
 
 ## Modelagem e Carga (Camada Ouro)
-O script `src/carga.py` (etapa `carga` do pipeline) abre o banco DuckDB `dados/ouro/projeto.duckdb`, copia a Prata para o esquema `prata` sem alterações e constrói o esquema `ouro` em SQL, dentro do banco. A camada deixa de ser uma pasta e passa a ser um esquema.
+O script `src/carga.py` (etapa `carga` do pipeline) abre o banco DuckDB `dados/ouro/projeto.duckdb` e copia a Prata para o esquema `prata` sem alterações. A camada deixa de ser uma pasta e passa a ser um esquema.
+
+### Transformação declarativa com dbt (aula 10)
+O esquema `ouro` é construído pelo dbt (etapa `modelagem`), no projeto `ecox14/`. Cada tabela é um arquivo `.sql` com um único `SELECT`; o dbt coloca o `CREATE TABLE` em volta e entrega ao DuckDB. São os mesmos `SELECT` que antes ficavam em strings dentro do `carga.py` (as funções `construir_*` continuam lá, comentadas no `main`, para comparação).
+
+- **`source('prata', ...)`** aponta para as tabelas da Prata, que o dbt não cria (declaradas em `models/sources.yml`).
+- **`ref('...')`** aponta para outro modelo e cria a dependência. A ordem de execução não é escrita em lugar nenhum: o dbt a deduz das referências.
+
+```
+prata.clima_internacoes ─────────► dim_mes ────────────┐
+prata.clima_internacoes ─────────► fato_clima_mensal ──┤
+prata.sih_sus  +  ref(dim_mes) ──► fato_internacoes ───┼──► vw_clima_internacoes_mensal
+(valores escritos à mão) ────────► dim_faixa_etaria ───┘
+```
+
+- **Materialização:** as dimensões e fatos são tabelas (padrão do `dbt_project.yml`); `vw_clima_internacoes_mensal` é view, por `{{ config(materialized='view') }}` no topo do arquivo.
+- **Conferências depois do dbt:** as consultas da tabela abaixo continuam no `carga.py`, na função `conferir_ouro()`, que o pipeline chama logo depois do `dbt run`. Assim elas conferem a Ouro que acabou de ser criada, e não a da execução anterior.
+- **`profiles.yml` dentro do projeto:** com caminho relativo (`../dados/ouro/projeto.duckdb`), para funcionar em qualquer máquina que clonar o repositório. O DuckDB não tem senha, então o arquivo não guarda segredo.
 
 ### Esquema estrela
 
@@ -174,7 +211,7 @@ As duas fatos compartilham a mesma `dim_mes`. É isso que permite colocar clima 
 - Os 2 meses do SIH/SUS sem clima (nov/2009 e dez/2009, 45 internações) ficam fora de `fato_internacoes`. A etapa registra isso no log como aviso. Por isso a Ouro tem **13.599** internações, e não as 13.644 do TabNet (13.644 − 45 = 13.599).
 
 ### Conferências (última execução)
-A etapa `carga` interrompe o pipeline se qualquer uma destas consultas não devolver 0.
+A etapa `modelagem` interrompe o pipeline se qualquer uma destas consultas não devolver 0 (função `conferir_ouro()` do `carga.py`, executada depois do `dbt run`).
 
 | Conferência | Resultado |
 |---|---|
@@ -194,9 +231,8 @@ Total de internações na Ouro: **13.599**.
 Cada etapa registra o que fez em arquivos `proveniencia.jsonl` (modo de acréscimo, que preserva o histórico):
 - **Bronze:** fonte, URL, arquivo de origem e data de extração.
 - **Prata:** arquivo de origem, número de linhas antes e depois e a lista de decisões de tratamento.
-- **Ouro:** a etapa `carga` registra no `pipeline.log` o número de linhas de cada tabela, os meses deixados de fora e o resultado de cada conferência.
+- **Ouro:** o `dbt run` mostra na tela cada modelo criado e grava o SQL que enviou ao banco em `ecox14/target/run/`. A etapa `modelagem` registra no `pipeline.log` os meses deixados de fora e o resultado de cada conferência.
 
 ## Próximos Passos
-- Etapa `modelagem`: reescrever a camada Ouro em dbt (aula 10), mantendo os mesmos nomes e grãos.
 - Criar, a partir da view mensal, os atributos que combinam as duas fontes.
 - Comparar o efeito da amplitude térmica com o da temperatura média sobre as internações.

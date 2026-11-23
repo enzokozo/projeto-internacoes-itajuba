@@ -1,0 +1,27 @@
+# Projeto dbt da camada Ouro (aula 10).
+# O "profile" abaixo precisa ter o MESMO nome do topo do profiles.yml.
+
+name: 'ecox14'
+version: '1.0.0'
+config-version: 2
+
+profile: 'ecox14'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  ecox14:
+    # Padrao: todo modelo vira tabela. A view muda isso no proprio arquivo.
+    # Nao use +schema aqui: o dbt juntaria com o schema do profile
+    # e criaria "ouro_ouro".
+    +materialized: table

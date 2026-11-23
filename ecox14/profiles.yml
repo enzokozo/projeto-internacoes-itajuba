@@ -1,0 +1,20 @@
+# Como o dbt se conecta ao banco.
+#
+# Na aula este arquivo fica em C:\Users\SEU_USUARIO\.dbt\profiles.yml,
+# com o caminho COMPLETO do banco. Aqui ele fica dentro do projeto,
+# com caminho RELATIVO, para funcionar em qualquer maquina que clonar
+# o repositorio. O dbt procura primeiro um profiles.yml na pasta onde
+# o comando e rodado, por isso rode o dbt de dentro de ecox14/.
+#
+# O DuckDB nao tem senha, entao nao ha segredo neste arquivo.
+#
+# "ecox14", no topo, tem que ser igual ao profile do dbt_project.yml.
+
+ecox14:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../dados/ouro/projeto.duckdb   # o mesmo banco que o carga.py cria
+      schema: ouro                         # os modelos nascem no esquema ouro
+      threads: 1

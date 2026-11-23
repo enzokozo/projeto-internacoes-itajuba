@@ -1,0 +1,11 @@
+version: 2
+
+# Tabelas que o dbt NAO cria: o carga.py copia da Prata para o banco.
+# E aqui que o grafo comeca.
+sources:
+  - name: prata
+    schema: prata
+    tables:
+      - name: sih_sus
+      - name: nasa_power
+      - name: clima_internacoes
