@@ -20,7 +20,10 @@ COMO EXECUTAR, a partir da raiz do projeto
 ==========================================
     python src/pipeline.py                  roda tudo
     python src/pipeline.py enriquecimento   retoma do meio
-    python src/pipeline.py modelagem        so refaz a Ouro (dbt) e confere
+    python src/pipeline.py modelagem        so refaz a Ouro (dbt run) e testa (dbt test)
+
+O painel (dashboard/) fica fora do pipeline: ele so le a Ouro.
+    streamlit run dashboard/painel.py
 
 Antes, coloque sih_sus_raw.csv e nasa_raw.csv na pasta dados/.
 
@@ -82,16 +85,34 @@ def etapa_modelagem():
             "pip install dbt-core dbt-duckdb"
         )
 
-    # check=True: se o dbt falhar, o Python levanta erro e o pipeline
-    # para. Sem ele, o log diria "concluido" com a Ouro quebrada.
-    subprocess.run(
-        ["dbt", "run"],
-        cwd=config.RAIZ / "ecox14",
-        check=True,
-    )
+    pasta_dbt = config.RAIZ / "ecox14"
 
-    # Confere a Ouro que o dbt ACABOU de criar.
-    carga.conferir_ouro()
+    # check=True: se o dbt run falhar, o Python levanta erro e o
+    # pipeline para. Sem ele, o log diria "concluido" com a Ouro quebrada.
+    subprocess.run(["dbt", "run"], cwd=pasta_dbt, check=True)
+
+    # Ler o resultado do run AGORA: o dbt test logo abaixo sobrescreve
+    # o run_results.json que a proveniencia usa.
+    dbt_run = carga.resultado_dbt("run")
+
+    # Aula 11: as conferencias viraram testes (ecox14/models/schema.yml
+    # e ecox14/tests/). Aqui SEM check=True, de proposito: primeiro a
+    # proveniencia registra o resultado, aprovado ou nao; depois o
+    # pipeline para se algum teste falhou.
+    # Para ver as linhas que falharam:
+    #   cd ecox14
+    #   dbt test --select NOME_DO_TESTE --store-failures
+    testes = subprocess.run(["dbt", "test"], cwd=pasta_dbt)
+    dbt_test = carga.resultado_dbt("test")
+
+    # Uma linha em dados/ouro/proveniencia.jsonl, como Bronze e Prata.
+    carga.registrar_ouro(dbt_run, dbt_test)
+
+    if testes.returncode != 0:
+        raise RuntimeError(
+            "dbt test falhou; a Ouro foi registrada como reprovada em "
+            "dados/ouro/proveniencia.jsonl. Veja acima quais testes falharam."
+        )
 
 
 ETAPAS = [

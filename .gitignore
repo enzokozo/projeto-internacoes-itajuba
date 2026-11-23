@@ -17,3 +17,10 @@ ecox14/target/
 ecox14/logs/
 ecox14/dbt_packages/
 ecox14/.user.yml
+
+# Interface do DuckDB (aula 11): e programa baixado, nao e codigo do projeto
+duckdb.exe
+/duckdb
+
+# Proveniencia da Ouro: versionada, como a da Prata e a da Bronze
+!dados/ouro/proveniencia.jsonl
