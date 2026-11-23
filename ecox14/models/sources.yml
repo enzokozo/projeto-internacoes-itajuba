@@ -1,11 +1,26 @@
 version: 2
 
 # Tabelas que o dbt NAO cria: o carga.py copia da Prata para o banco.
-# E aqui que o grafo comeca.
+# E aqui que o grafo comeca. As descricoes aparecem no dbt docs.
 sources:
   - name: prata
     schema: prata
+    description: >
+      Camada Prata, copiada dos Parquet de dados/prata/ pelo carga.py.
+      A proveniencia de cada transformacao esta em
+      dados/prata/proveniencia.jsonl.
     tables:
       - name: sih_sus
+        description: >
+          Internacoes por doencas respiratorias em Itajuba/MG, formato
+          LARGO: uma linha por mes e uma coluna por faixa etaria, mais o
+          Total. Fonte: SIH/SUS (TabNet/DataSUS), nov/2009 a dez/2019.
       - name: nasa_power
+        description: >
+          Clima diario na coordenada de Itajuba (NASA POWER), 2010 a
+          2019, com a AMPLITUDE_TERMICA calculada na Prata.
       - name: clima_internacoes
+        description: >
+          Clima diario com as internacoes do mes repetidas em cada dia
+          (resultado do enriquecimento). NAO some as internacoes aqui:
+          cada mes aparece cerca de 30 vezes.

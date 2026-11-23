@@ -1,0 +1,168 @@
+# Documentacao e testes da camada Ouro (aula 11).
+#
+# Cada descricao aqui aparece no site do "dbt docs", e cada teste roda
+# no "dbt test". Os dois ficam lado a lado de proposito: quando o modelo
+# muda, quem edita o teste ve a descricao e atualiza junto.
+#
+# Testes prontos (unique, not_null, relationships, accepted_values) sao
+# declarados aqui. O que nenhum teste pronto cobre (chave composta,
+# soma que precisa bater, coerencia entre colunas) esta em ecox14/tests/.
+#
+# Nota sobre a view: vw_clima_internacoes_mensal so tem teste de chave.
+# Ela nao guarda dado, so junta as tabelas abaixo, que ja sao testadas.
+# O teste proprio vw_sem_mes_perdido confere que os joins dela nao
+# descartam nenhum mes em silencio.
+#
+# Em dbt anterior a 1.8 o campo se chama "tests", sem o "data_".
+
+version: 2
+
+models:
+
+  - name: dim_mes
+    description: >
+      Calendario do projeto, uma linha por mes. So entram os meses que
+      existem nas DUAS fontes: jan/2010 a dez/2019, 120 meses.
+      Nov e dez/2009 existem so no SIH/SUS e ficam de fora.
+    columns:
+      - name: mes
+        description: Primeiro dia do mes (DATE). Chave da dimensao.
+        data_tests:
+          - unique
+          - not_null
+      - name: ano
+        description: Ano do mes, inteiro.
+        data_tests:
+          - not_null
+      - name: mes_num
+        description: Numero do mes, de 1 a 12.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+              quote: false
+      - name: estacao
+        description: >
+          Estacao do ano no hemisferio sul, pelo mes: verao (dez a fev),
+          outono (mar a mai), inverno (jun a ago), primavera (set a nov).
+          Simplificacao por mes, nao pela data exata do equinocio.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['verao', 'outono', 'inverno', 'primavera']
+
+  - name: dim_faixa_etaria
+    description: >
+      As 12 faixas etarias do TabNet, escritas a mao porque a ordem e o
+      grupo nao existem na fonte. O nome da faixa precisa ser identico
+      ao cabecalho do CSV do TabNet; se nao for, o teste relationships
+      da fato_internacoes acusa.
+    columns:
+      - name: ordem
+        description: Posicao da faixa, da mais nova (1) para a mais velha (12).
+        data_tests:
+          - unique
+          - not_null
+      - name: faixa
+        description: Nome da faixa, como o TabNet escreve. Chave da dimensao.
+        data_tests:
+          - unique
+          - not_null
+      - name: grupo
+        description: >
+          Agrupamento usado na analise: crianca (0 a 9 anos), adolescente
+          (10 a 19), adulto (20 a 59) e idoso (60 ou mais).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['crianca', 'adolescente', 'adulto', 'idoso']
+
+  - name: fato_internacoes
+    description: >
+      Internacoes por doencas respiratorias em Itajuba/MG, uma linha por
+      mes e faixa etaria (120 x 12 = 1.440 linhas). Fonte: SIH/SUS, via
+      TabNet. A coluna Total do TabNet nao entra: e a soma das faixas.
+      Esta coluna PODE ser somada entre meses e entre faixas.
+    columns:
+      - name: mes
+        description: Mes de atendimento. Aponta para dim_mes.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_mes')
+              field: mes
+      - name: faixa
+        description: Faixa etaria. Aponta para dim_faixa_etaria.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_faixa_etaria')
+              field: faixa
+      - name: internacoes
+        description: >
+          Numero de internacoes no mes e na faixa. O "-" do TabNet virou
+          zero na Prata: e ausencia de caso, nao dado faltante.
+        data_tests:
+          - not_null
+
+  - name: fato_clima_mensal
+    description: >
+      Clima de Itajuba resumido por mes, uma linha por mes (120 linhas).
+      Fonte: NASA POWER, media de uma grade de cerca de 50 x 60 km em
+      torno da cidade, e nao uma estacao meteorologica local.
+      Temperaturas, amplitude e umidade sao medias, minimos ou maximos
+      do mes e NAO se somam entre meses. A excecao e precipitacao_mm.
+    columns:
+      - name: mes
+        description: Primeiro dia do mes. Aponta para dim_mes.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_mes')
+              field: mes
+      - name: temperatura_media
+        description: Media da temperatura diaria a 2 m (T2M), em graus C.
+      - name: temperatura_minima
+        description: Menor minima diaria do mes (T2M_MIN), em graus C.
+      - name: temperatura_maxima
+        description: Maior maxima diaria do mes (T2M_MAX), em graus C.
+      - name: amplitude_media
+        description: >
+          Media da amplitude termica diaria do mes (T2M_MAX - T2M_MIN do
+          mesmo dia), em graus C. E a variavel central da pergunta
+          norteadora.
+        data_tests:
+          - not_null
+      - name: amplitude_maxima
+        description: Maior amplitude termica diaria do mes, em graus C.
+      - name: umidade_media
+        description: Media da umidade relativa a 2 m (RH2M), em %.
+      - name: precipitacao_mm
+        description: Chuva acumulada no mes (soma de PRECTOTCORR), em mm.
+      - name: dias
+        description: Quantos dias do mes entraram no resumo (28 a 31).
+
+  - name: vw_clima_internacoes_mensal
+    description: >
+      A tabela que responde a pergunta norteadora: uma linha por mes,
+      com o clima e as internacoes lado a lado, por grupo etario.
+      E view: nao guarda dado e refaz os joins a cada consulta, entao
+      nunca fica desatualizada em relacao as tabelas acima.
+      Sem teste proprio alem da chave: ver nota no topo deste arquivo.
+    columns:
+      - name: mes
+        description: Primeiro dia do mes.
+        data_tests:
+          - unique
+          - not_null
+      - name: internacoes_total
+        description: Soma das internacoes de todas as faixas no mes.
+      - name: internacoes_criancas
+        description: Internacoes de 0 a 9 anos.
+      - name: internacoes_adolescentes
+        description: Internacoes de 10 a 19 anos.
+      - name: internacoes_adultos
+        description: Internacoes de 20 a 59 anos.
+      - name: internacoes_idosos
+        description: Internacoes de 60 anos ou mais.
