@@ -1,6 +1,6 @@
 # Clima e internações respiratórias em Itajubá, MG
 
-Pipeline de dados construído ao longo da disciplina ECOX14, Engenharia de Dados na Prática, da UNIFEI. Cada pasta corresponde a uma etapa vista em aula: ingestão, tratamento, carga, modelagem e apresentação.
+Pipeline de dados construído ao longo da disciplina ECOX14, Tópicos Especiais em Programação I (Engenharia de Dados na Prática), da UNIFEI. Cada pasta corresponde a uma etapa vista em aula: ingestão, tratamento, carga, modelagem e apresentação.
 
 O pipeline lê dados públicos de saúde e de clima, organiza em três camadas (Bronze, Prata e Ouro) e entrega um modelo dimensional consultado por um painel.
 
@@ -49,7 +49,7 @@ O ambiente precisa estar ativado durante toda a execução. A etapa de modelagem
 
 ### 2. Perfil do dbt
 
-Não há nada a configurar. O dbt procura a conexão com o banco num arquivo `profiles.yml`, e o projeto traz o seu em `ecox14/profiles.yml`.
+Não há nada a configurar. O dbt procura a conexão com o banco num arquivo `profiles.yml`, e o projeto já traz esse arquivo pronto, em `ecox14/profiles.yml`.
 
 O dbt lê primeiro o `profiles.yml` da pasta de onde é executado. Por isso o arquivo do projeto vale mesmo que você já tenha um `~/.dbt/profiles.yml`. O caminho do banco é relativo (`../dados/ouro/projeto.duckdb`), e funciona em qualquer máquina.
 
@@ -182,11 +182,13 @@ Guarda o dado limpo, tipado e com a granularidade conferida. Uma tabela por font
 
 | Arquivo | O que o tratamento faz |
 |---|---|
-| `sih_sus.parquet` | Mantém só as linhas mensais (as que começam com `..`), o que remove os totais anuais, o `Total` geral e o rodapé: ficam 122 meses. Converte o período de texto (`..Janeiro/2010`) para data, na coluna `PERIODO`. Converte o `-` do TabNet em `0`: são 76 das 1.464 células mensais, concentradas de 10 a 19 anos. Tipa as contagens como inteiro; um valor inesperado para o script, em vez de virar zero. Confere que a soma das faixas é igual ao `Total` nos 122 meses. |
+| `sih_sus.parquet` | Mantém só as linhas mensais (as que começam com `..`), o que remove os totais anuais, o `Total` geral e o rodapé: ficam 122 meses. Converte o período de texto (`..Janeiro/2010`) para data, na coluna `PERIODO`. Converte o `-` do TabNet em `0`: são 76 das 1.464 células mensais, concentradas de 10 a 19 anos. Tipa as contagens como inteiro; um valor inesperado interrompe o script, em vez de virar zero. Confere que a soma das faixas é igual ao `Total` nos 122 meses. |
 | `nasa_power.parquet` | Ignora o cabeçalho descritivo até `-END HEADER-`. Troca o código `-999` por ausente (nesta extração não há nenhum). Monta a coluna `DATA` a partir de `YEAR` e `DOY`: são 3.652 dias consecutivos, sem lacuna nem repetição. Calcula `AMPLITUDE_TERMICA` (`T2M_MAX - T2M_MIN`), que vai de 3,4 °C a 22,9 °C, com média de 12,3 °C, e confere que nunca é negativa. |
 | `clima_internacoes.parquet` | Cria a chave `MES` (primeiro dia do mês de `DATA`) e junta o clima diário às internações do mês por `MES = PERIODO`, mantendo todas as linhas do clima (`left`, `many_to_one`). O resultado tem uma linha por dia, com as internações do mês repetidas em cada dia. |
 
 **Não some as internações em `clima_internacoes`.** Cada mês aparece cerca de 30 vezes: a soma de `Total` daria 414.277, em vez de 13.599. O resumo por mês é feito na Ouro.
+
+**Nenhum atributo novo depois da junção, de propósito.** A tabela enriquecida está no grão do dia, e as internações, no grão do mês. Qualquer conta que misture os dois, como internações por grau de amplitude do dia, inventaria um valor diário que a fonte não tem. A comparação certa é mês com mês, e ela é feita na Ouro, depois que o `group by` leva o clima para o grão do mês.
 
 Conferência das chaves antes da junção, em meses: 120 nos dois lados, 0 só no clima e 2 só no SIH/SUS (nov/2009 e dez/2009, com 45 internações). A série da NASA começa em 01/01/2010, então esses dois meses ficam fora do resultado. Estão registrados no `proveniencia.jsonl` para não sumirem sem aviso.
 
@@ -309,7 +311,7 @@ dbt test --select soma_bate_total_sih --store-failures
 
 O dbt grava as linhas numa tabela do esquema `ouro_dbt_test__audit`, que pode ser consultada no banco.
 
-Até a aula de modelagem, essas regras eram conferências em Python no `carga.py`, que só escreviam o resultado no log. Elas viraram os testes acima. O `carga.py` ficou só com o registro das linhas e dos meses que ficaram fora.
+Até a aula de modelagem, essas regras eram conferências em Python no `carga.py`, que só escreviam o resultado no log. Elas viraram os testes acima. O `carga.py` ficou com a cópia da Prata para o banco e com o registro da proveniência da Ouro, que guarda as linhas de cada modelo e os meses que ficaram fora.
 
 As transformações da Bronze e da Prata têm validações dentro dos próprios scripts (soma das faixas igual ao `Total`, amplitude não negativa, datas válidas), que interrompem a execução quando falham. Não há testes automatizados separados para o código Python.
 
@@ -357,6 +359,37 @@ O que ele mostra:
 Toda consulta está em `dashboard/consultas.py`, com filtros passados como parâmetro, nunca concatenados ao texto do SQL. As médias, somas e correlações são calculadas pelo banco. O filtro de grupo etário é aplicado na `fato_internacoes`, e não escolhendo uma coluna da view, porque nome de coluna não pode ser parâmetro.
 
 As consultas ficam em cache por 10 minutos. Depois de rodar o pipeline de novo, espere esse tempo ou reinicie o painel para ver os dados novos.
+
+---
+
+## Resultado
+
+**Resposta à pergunta norteadora: não.** As internações acompanham a temperatura média do mês, e quase nada a amplitude térmica. Mais frio, mais internação; uma amplitude maior não traz mais internação.
+
+Correlação de Pearson entre as internações do mês e o clima do mesmo mês, nos 120 meses de 2010 a 2019. É a conta que o painel faz, com o período completo:
+
+| Recorte | Temperatura média | Amplitude térmica média |
+|---|---|---|
+| Todas as idades | **−0,51** | 0,12 |
+| Crianças | −0,53 | −0,04 |
+| Adolescentes | −0,17 | 0,08 |
+| Adultos | −0,27 | 0,14 |
+| Idosos | −0,42 | 0,20 |
+
+A pergunta compara a força das duas relações, isto é, o valor absoluto. A temperatura média vence em todos os grupos etários. A amplitude nunca passa de 0,20.
+
+Média mensal por estação do ano:
+
+| Estação | Internações por mês | Temperatura média (°C) | Amplitude média (°C) |
+|---|---|---|---|
+| Verão | 88,4 | 21,5 | 11,0 |
+| Outono | 126,8 | 18,5 | 10,7 |
+| Inverno | 138,7 | 15,2 | 13,3 |
+| Primavera | 99,3 | 19,6 | 14,1 |
+
+A tabela reforça a resposta. A primavera tem a maior amplitude média do ano e uma das menores médias de internação. O inverno, o mais frio, tem a maior.
+
+Esse resultado tem os limites descritos abaixo, sobretudo o primeiro: a estação do ano move a temperatura e também outras causas de internação.
 
 ---
 
