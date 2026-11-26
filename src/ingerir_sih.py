@@ -1,7 +1,7 @@
-"""Script de ingestao da fonte primaria: SIH/SUS (TabNet / DataSUS).
+"""Script de ingestão da fonte principal: SIH/SUS (TabNet / DataSUS).
 
-Localiza o CSV descarregado, copia-o para a camada Bronze
-com a data de extração no nome e regista a proveniencia.
+Localiza o CSV baixado, copia o arquivo para a camada Bronze
+com a data da extração no nome e registra a proveniência.
 """
 
 from datetime import date, datetime
@@ -17,17 +17,17 @@ log = logging.getLogger(__name__)
 
 
 def copiar_para_bronze(origem: Path) -> Path:
-    """Copia o ficheiro de dados brutos para a pasta Bronze com a data no nome."""
+    """Copia o arquivo de dados brutos para a pasta Bronze com a data no nome."""
     if not origem.exists():
         raise FileNotFoundError(
             f"Ficheiro de origem nao encontrado em: {origem}. "
             "Por favor, coloque o ficheiro CSV descarregado do TabNet nesse caminho."
         )
 
-    # Garante a criação da pasta de destino
+    # Garante que a pasta de destino exista
     BRONZE_SIH.mkdir(parents=True, exist_ok=True)
 
-    # Formata a data atual no padrao AAAAMMDD
+    # Formata a data atual no padrão AAAAMMDD
     hoje = date.today().strftime("%Y%m%d")
     destino = BRONZE_SIH / f"internacoes_{hoje}.csv"
 
@@ -35,14 +35,14 @@ def copiar_para_bronze(origem: Path) -> Path:
     if destino.exists():
         log.warning("%s ja existia e foi sobrescrito", destino.name)
 
-    # Copia o ficheiro sem alterar o seu conteúdo
+    # Copia o arquivo sem alterar o conteúdo
     shutil.copy(origem, destino)
     log.info("copiado para a bronze: %s", destino.name)
     return destino
 
 
 def registrar_proveniencia(origem: Path, destino: Path) -> None:
-    """Regista as informações de rastreabilidade no ficheiro proveniencia.jsonl."""
+    """Registra as informações de rastreabilidade no arquivo proveniencia.jsonl."""
     info = {
         "fonte": "SIH/SUS (TabNet - DataSUS)",
         "url_origem": FONTE_URL,
@@ -54,7 +54,7 @@ def registrar_proveniencia(origem: Path, destino: Path) -> None:
 
     caminho_prov = BRONZE_SIH / "proveniencia.jsonl"
 
-    # Escreve acrescentando uma nova linha (modo 'a') para preservar histórico
+    # Acrescenta uma nova linha (modo 'a') para preservar o histórico
     with caminho_prov.open("a", encoding="utf-8") as f:
         f.write(json.dumps(info, ensure_ascii=False) + "\n")
 
